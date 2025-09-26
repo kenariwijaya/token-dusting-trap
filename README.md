@@ -1,79 +1,88 @@
-# TokenDustingTrap
+# Token Dusting Trap
 
-A smart contract trap for detecting token dusting attacks on Ethereum wallets. This trap monitors incoming token transfers and alerts when unknown tokens are sent to watched wallets, which is a common pattern in dusting attacks used for privacy invasion and tracking.
+This Proof-of-Concept demonstrates how to detect **token dusting attacks** using the Drosera Network trap architecture.
+In Option A, detection relies on an **off-chain bot** combined with an **on-chain registry**, which allows traps to remain lightweight and compliant with Drosera’s trap interface.
 
-## Overview
+---
 
-Token dusting is a technique where attackers send small amounts of tokens to multiple wallet addresses to track and deanonymize users. This trap helps detect such attacks by monitoring for transfers of unknown tokens to specified wallet addresses.
+## 📌 Concept
 
-## Use Cases
+* **Dusting Attack**: An attacker sends a small number of tokens (“dust”) to a victim’s wallet. Later, the attacker tracks how the wallet interacts with the tokens to deanonymize the victim or trick them into malicious approvals/swaps.
+* **Challenge**: Traps cannot directly read logs/events on-chain.
+* **Solution**: Off-chain bots detect dusting patterns, write them into a `DustRegistry.sol`, and the trap (`TokenDustingTrap.sol`) queries this registry to decide whether to respond.
 
-### 1. **Privacy Protection for Individual Users**
-- **Scenario**: A privacy-conscious individual wants to monitor their wallet for potential dusting attacks
-- **Implementation**: Deploy the trap and configure it to monitor your primary wallet address
-- **Benefit**: Receive immediate alerts when unknown tokens are sent to your address, allowing you to take privacy measures
+---
 
-### 2. **Institutional Wallet Security**
-- **Scenario**: A DeFi protocol or exchange wants to monitor their treasury wallets for suspicious activity
-- **Implementation**: Set up the trap to monitor multiple institutional wallet addresses
-- **Benefit**: Early detection of potential tracking attempts or reconnaissance activities against institutional funds
+## 🛠️ How It Works
 
-### 3. **High-Value Wallet Monitoring**
-- **Scenario**: Whale wallets or high-net-worth individuals need advanced security monitoring
-- **Implementation**: Configure the trap to monitor whale addresses for dusting patterns
-- **Benefit**: Detect potential targeted attacks or surveillance attempts against high-value targets
+1. **Off-chain bot** listens for ERC20 `Transfer` events.
+2. When a suspicious transfer is detected (below threshold, from unknown source, etc.), the bot computes a **unique interaction ID**:
 
-### 4. **DeFi Protocol Security**
-- **Scenario**: A DeFi protocol wants to protect user privacy by detecting dusting attacks on user wallets
-- **Implementation**: Integrate the trap into the protocol's security infrastructure
-- **Benefit**: Provide users with dusting attack alerts as part of the protocol's security features
+   ```
+   keccak256(wallet, token, from, amount, blockNumber)
+   ```
+3. Bot calls `DustRegistry.flag(id)` → saves detection result on-chain.
+4. `TokenDustingTrap` queries the registry during `collect()` and returns `shouldRespond = true` if flagged.
+5. Drosera network receives the trap signal → forwards to responder.
+6. Responder sends an alert with rich context (wallet, token, sender, amount, block).
 
-### 5. **Compliance and Risk Management**
-- **Scenario**: Financial institutions need to monitor for potential privacy attacks on customer wallets
-- **Implementation**: Use the trap as part of a broader compliance and monitoring system
-- **Benefit**: Maintain audit trails of potential privacy invasion attempts
+---
 
-### 6. **Research and Analytics**
-- **Scenario**: Blockchain researchers studying dusting attack patterns and prevalence
-- **Implementation**: Deploy the trap to monitor a sample set of addresses for research purposes
-- **Benefit**: Collect data on dusting attack frequency, timing, and token types used
+## ✅ Use Cases
 
-### 7. **Multi-Wallet Portfolio Protection**
-- **Scenario**: Users with multiple wallets want comprehensive monitoring across their entire portfolio
-- **Implementation**: Configure multiple instances or modify the trap to monitor multiple addresses
-- **Benefit**: Centralized monitoring of dusting attempts across an entire wallet portfolio
+### 1. **Suspicious Token Dusting**
 
-### 8. **MEV Protection Services**
-- **Scenario**: MEV protection services want to alert users about potential privacy invasions
-- **Implementation**: Integrate the trap into existing MEV protection infrastructure
-- **Benefit**: Provide comprehensive protection against both MEV attacks and privacy invasions
+* A wallet receives **tiny amounts** of tokens from an unknown address.
+* Registry marks this as a dusting attempt.
+* Trap reports it → responder issues an **alert notification**.
 
-## How It Works
+---
 
-The trap monitors blockchain data for token transfers and triggers an alert when:
-1. A token transfer is directed to a monitored wallet address
-2. The token being transferred is not in the known/trusted token list
-3. The transfer matches dusting attack patterns (typically small amounts from unknown sources)
+### 2. **Mass Dusting Campaign**
 
-## Contract Features
+* A bot detects the **same source address** sending small amounts of a token to **hundreds of wallets**.
+* Each flagged transfer is recorded in `DustRegistry`.
+* Trap picks up these flags → alerts can highlight **pattern-based attacks**.
 
-- **Immutable Wallet Address**: The contract owner's wallet is set at deployment and cannot be changed
-- **Flexible Monitoring**: Can monitor any wallet address by configuring the input data
-- **Unknown Token Detection**: Specifically looks for transfers of tokens not marked as "known" or trusted
-- **Alert System**: Returns structured data when dusting is detected, including token address, sender, recipient, and amount
+---
 
-## Integration
+### 3. **Front-Running Fake Token Dust**
 
-This trap is designed to work with the Drosera monitoring system and can be integrated into:
-- Personal security dashboards
-- DeFi protocol alert systems  
-- Institutional monitoring tools
-- Privacy-focused wallet applications
-- Blockchain analysis platforms
+* Attacker dusts wallets with **fake tokens** that mimic popular ones.
+* When victims later attempt to swap, they are directed to a malicious pair.
+* Registry detects unusual token contracts with **no whitelist match**.
+* Trap reports → responder can warn: *“Suspicious token contract dusted to wallet”*.
 
-## Security Considerations
+---
 
-- The trap only monitors and alerts; it does not prevent dusting attacks
-- Users should implement additional privacy measures when dusting is detected
-- Consider rate limiting and gas optimization for high-frequency monitoring scenarios
-- Ensure proper access controls when integrating into larger systems
+### 4. **KYC/Privacy Deanonymization via Dust**
+
+* Dust is used to **track wallet clusters** across interactions.
+* Off-chain bot flags transfers that link multiple addresses together.
+* Registry stores these as **privacy risk dust events**.
+* Trap signals → responder can label wallet as *“Possible dust deanonymization target”*.
+
+---
+
+## 🔗 Components
+
+* **DustRegistry.sol**
+  Stores dusting detection flags submitted by off-chain bots.
+
+* **TokenDustingTrap.sol**
+  Implements Drosera’s `ITrap` interface. Reads flags from `DustRegistry`.
+
+* **Off-chain Bot**
+  Detects ERC20 dusting patterns and updates the registry.
+
+* **Responder**
+  Receives trap alerts and issues notifications.
+
+---
+
+## ⚡ Benefits of Registry-Driven Approach
+
+* Lightweight on-chain trap (only `view` calls).
+* Offloads heavy detection logic to off-chain bots.
+* Supports flexible detection rules without redeploying traps.
+* Provides rich context (who, what, when) via responder alerts.
